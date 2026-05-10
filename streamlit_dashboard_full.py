@@ -14,7 +14,7 @@ from pathlib import Path
 # --------------------------------------------------
 # Settings
 # --------------------------------------------------
-BASE_DIR = Path("/Users/franciscomacedo/.spyder-py3")
+BASE_DIR = Path(__file__).resolve().parent
 CSV_FILE = BASE_DIR / "vivareal_history.csv"
 
 st.set_page_config(
