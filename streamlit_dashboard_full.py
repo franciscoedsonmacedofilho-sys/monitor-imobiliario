@@ -246,8 +246,8 @@ if df.empty:
 # --------------------------------------------------
 # Sidebar: navigation first
 # --------------------------------------------------
-st.sidebar.title("VivaReal")
-st.sidebar.caption("Real estate market monitor")
+st.sidebar.title("Monitor imobiliário")
+st.sidebar.caption("Vendas")
 
 st.sidebar.divider()
 st.sidebar.header("Sections")
@@ -550,8 +550,8 @@ def plot_time_series(data, y_col, title, ylabel):
 # --------------------------------------------------
 st.markdown(
     """
-    <div class="main-title">VivaReal Real Estate Dashboard</div>
-    <div class="subtitle">Multi-city property monitor based on scraped VivaReal listings.</div>
+    <div class="main-title">Monitor imobiliáio de capitais Brasileiras</div>
+    <div class="subtitle">Venda</div>
     """,
     unsafe_allow_html=True,
 )
