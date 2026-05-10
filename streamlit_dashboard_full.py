@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri May  8 11:42:02 2026
-
-@author: franciscomacedo
+VivaReal Multi-City Dashboard
+Interactive Plotly version with property estimator
 """
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.express as px
 import re
 from pathlib import Path
 
 # --------------------------------------------------
 # Settings
 # --------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path("/Users/franciscomacedo/.spyder-py3")
 CSV_FILE = BASE_DIR / "vivareal_history.csv"
 
 st.set_page_config(
@@ -23,7 +22,83 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("VivaReal Real Estate Dashboard")
+# --------------------------------------------------
+# Styling
+# --------------------------------------------------
+st.markdown(
+    """
+    <style>
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        max-width: 1300px;
+    }
+
+    section[data-testid="stSidebar"] {
+        background-color: #111827;
+    }
+
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3,
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] span {
+        color: #f9fafb;
+    }
+
+    .main-title {
+        font-size: 2.3rem;
+        font-weight: 800;
+        margin-bottom: 0.2rem;
+        letter-spacing: -0.03em;
+    }
+
+    .subtitle {
+        color: #9ca3af;
+        font-size: 1rem;
+        margin-bottom: 1.6rem;
+    }
+
+    .metric-card {
+        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+        padding: 1.15rem;
+        border-radius: 18px;
+        border: 1px solid #374151;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+        min-height: 105px;
+    }
+
+    .metric-label {
+        color: #9ca3af;
+        font-size: 0.82rem;
+        margin-bottom: 0.45rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .metric-value {
+        color: #f9fafb;
+        font-size: 1.45rem;
+        font-weight: 750;
+    }
+
+    div[data-testid="stDataFrame"] {
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .stButton > button,
+    .stDownloadButton > button {
+        border-radius: 12px;
+        border: 1px solid #374151;
+        padding: 0.6rem 1rem;
+        font-weight: 600;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # --------------------------------------------------
 # Data cleaning helpers
@@ -39,7 +114,6 @@ def parse_brl(value):
         return None
 
     value = str(value)
-
     match = re.search(r"R\$ ?([\d\.]+(?:,\d{1,2})?)", value)
 
     if not match:
@@ -66,7 +140,6 @@ def parse_first_number(value):
         return None
 
     value = str(value)
-
     match = re.search(r"(\d+(?:[.,]\d+)?)", value)
 
     if not match:
@@ -151,9 +224,19 @@ def load_data():
     df = df[df["price_num"] <= 30_000_000]
     df = df[df["price_per_m2"] <= 100_000]
 
+    # Remove listings with unrealistic bedroom or bathroom counts
+    # Keeps listings where bedroom/bathroom info is missing.
+    df = df[
+        (df["bedrooms_clean"].isna() | (df["bedrooms_clean"] <= 10)) &
+        (df["bathrooms_clean"].isna() | (df["bathrooms_clean"] <= 10))
+    ]
+
     return df
 
 
+# --------------------------------------------------
+# Load data
+# --------------------------------------------------
 df = load_data()
 
 if df.empty:
@@ -161,8 +244,32 @@ if df.empty:
     st.stop()
 
 # --------------------------------------------------
-# Sidebar filters
+# Sidebar: navigation first
 # --------------------------------------------------
+st.sidebar.title("VivaReal")
+st.sidebar.caption("Real estate market monitor")
+
+st.sidebar.divider()
+st.sidebar.header("Sections")
+
+section = st.sidebar.radio(
+    "Choose a section",
+    [
+        "Overview",
+        "Property estimator",
+        "Price distribution",
+        "Price/m² distribution",
+        "Price/m² x Area",
+        "Price/m² x Bedrooms",
+        "Price/m² x Bathrooms",
+        "Price/m² x Parking",
+        "Median price over time",
+        "City comparison",
+        "Data table",
+    ],
+)
+
+st.sidebar.divider()
 st.sidebar.header("Filters")
 
 # City filter
@@ -185,6 +292,7 @@ if df_city.empty:
     st.warning("No data available for the selected cities.")
     st.stop()
 
+# Price filter
 min_price = int(df_city["price_num"].min())
 max_price = int(df_city["price_num"].max())
 
@@ -196,6 +304,7 @@ price_range = st.sidebar.slider(
     step=10000,
 )
 
+# Area filter
 min_area = int(df_city["area_num"].min())
 max_area = int(df_city["area_num"].max())
 
@@ -207,6 +316,7 @@ area_range = st.sidebar.slider(
     step=5,
 )
 
+# Price/m² filter
 max_price_m2 = int(df_city["price_per_m2"].quantile(0.99))
 
 price_m2_range = st.sidebar.slider(
@@ -233,6 +343,7 @@ if not valid_dates.empty:
 else:
     date_range = None
 
+# Apply filters
 filtered = df_city[
     (df_city["price_num"] >= price_range[0]) &
     (df_city["price_num"] <= price_range[1]) &
@@ -256,23 +367,8 @@ if filtered.empty:
     st.stop()
 
 # --------------------------------------------------
-# Metrics
+# Summary data
 # --------------------------------------------------
-metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
-
-metric_col1.metric("Listings", f"{len(filtered):,}")
-metric_col2.metric("Cities", f"{filtered['city'].nunique():,}")
-metric_col3.metric("Median price", f"R$ {filtered['price_num'].median():,.0f}")
-metric_col4.metric("Median area", f"{filtered['area_num'].median():,.0f} m²")
-metric_col5.metric("Median R$/m²", f"R$ {filtered['price_per_m2'].median():,.0f}")
-
-st.divider()
-
-# --------------------------------------------------
-# City summary table
-# --------------------------------------------------
-st.subheader("City summary")
-
 city_summary = (
     filtered
     .groupby("city")
@@ -286,95 +382,81 @@ city_summary = (
     .reset_index()
 )
 
-st.dataframe(
-    city_summary,
-    use_container_width=True,
-)
-
-st.divider()
-
 # --------------------------------------------------
-# Plot helpers
+# Interactive Plotly chart helpers
 # --------------------------------------------------
-def format_currency_axis(ax, axis="x"):
-    if axis == "x":
-        ax.ticklabel_format(style="plain", axis="x")
-    else:
-        ax.ticklabel_format(style="plain", axis="y")
-
-
-def plot_histogram(data, column, title, xlabel, bins=40):
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.hist(data[column].dropna(), bins=bins)
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Number of listings")
-    format_currency_axis(ax, "x")
-    st.pyplot(fig)
-
-
 def plot_histogram_by_city(data, column, title, xlabel, bins=40):
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig = px.histogram(
+        data,
+        x=column,
+        color="city",
+        nbins=bins,
+        title=title,
+        labels={
+            column: xlabel,
+            "city": "City",
+        },
+        opacity=0.65,
+    )
 
-    for city in sorted(data["city"].dropna().unique()):
-        city_data = data[data["city"] == city][column].dropna()
-        if not city_data.empty:
-            ax.hist(city_data, bins=bins, alpha=0.5, label=city)
+    fig.update_layout(
+        bargap=0.05,
+        hovermode="x unified",
+        height=560,
+        legend_title_text="City",
+    )
 
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Number of listings")
-    ax.legend()
-    format_currency_axis(ax, "x")
-    st.pyplot(fig)
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def plot_scatter(data, x_col, y_col, title, xlabel, ylabel):
-    clean_data = data.dropna(subset=[x_col, y_col])
+    clean_data = data.dropna(subset=[x_col, y_col, "city"])
 
     if clean_data.empty:
         st.info("No data available for this chart.")
         return
 
-    fig, ax = plt.subplots(figsize=(12, 6))
+    hover_cols = [
+        col for col in [
+            "city",
+            "state",
+            "title",
+            "price",
+            "area",
+            "bedrooms",
+            "bathrooms",
+            "parking",
+            "neighborhood_city",
+            "street",
+            "price_num",
+            "area_num",
+            "price_per_m2",
+        ]
+        if col in clean_data.columns
+    ]
 
-    for city in sorted(clean_data["city"].dropna().unique()):
-        city_data = clean_data[clean_data["city"] == city]
-        ax.scatter(
-            city_data[x_col],
-            city_data[y_col],
-            alpha=0.6,
-            label=city,
-        )
-
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.legend()
-    format_currency_axis(ax, "y")
-    st.pyplot(fig)
-
-
-def plot_median_bar(data, group_col, value_col, title, xlabel, ylabel):
-    grouped = (
-        data
-        .dropna(subset=[group_col, value_col])
-        .groupby(group_col)[value_col]
-        .median()
-        .sort_index()
+    fig = px.scatter(
+        clean_data,
+        x=x_col,
+        y=y_col,
+        color="city",
+        title=title,
+        labels={
+            x_col: xlabel,
+            y_col: ylabel,
+            "city": "City",
+        },
+        hover_data=hover_cols,
+        opacity=0.65,
     )
 
-    if grouped.empty:
-        st.info("No data available for this chart.")
-        return
+    fig.update_layout(
+        height=560,
+        hovermode="closest",
+        legend_title_text="City",
+    )
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    grouped.plot(kind="bar", ax=ax)
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    format_currency_axis(ax, "y")
-    st.pyplot(fig)
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def plot_median_bar_by_city(data, category_col, value_col, title, xlabel, ylabel):
@@ -386,48 +468,346 @@ def plot_median_bar_by_city(data, category_col, value_col, title, xlabel, ylabel
 
     grouped = (
         clean_data
-        .groupby(["city", category_col])[value_col]
-        .median()
-        .reset_index()
+        .groupby(["city", category_col], as_index=False)
+        .agg(
+            median_value=(value_col, "median"),
+            listings=(value_col, "count"),
+        )
     )
 
-    pivot = grouped.pivot(
-        index=category_col,
-        columns="city",
-        values=value_col,
-    ).sort_index()
+    fig = px.bar(
+        grouped,
+        x=category_col,
+        y="median_value",
+        color="city",
+        barmode="group",
+        title=title,
+        labels={
+            category_col: xlabel,
+            "median_value": ylabel,
+            "city": "City",
+            "listings": "Listings",
+        },
+        hover_data=["listings"],
+    )
 
-    if pivot.empty:
-        st.info("No data available for this chart.")
-        return
+    fig.update_layout(
+        height=560,
+        legend_title_text="City",
+    )
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    pivot.plot(kind="bar", ax=ax)
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    format_currency_axis(ax, "y")
-    st.pyplot(fig)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def plot_city_bar(data, x_col, y_col, title, xlabel, ylabel):
+    fig = px.bar(
+        data,
+        x=x_col,
+        y=y_col,
+        title=title,
+        labels={
+            x_col: xlabel,
+            y_col: ylabel,
+        },
+        hover_data=data.columns,
+    )
+
+    fig.update_layout(
+        height=500,
+        showlegend=False,
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def plot_time_series(data, y_col, title, ylabel):
+    fig = px.line(
+        data,
+        x="scrape_date",
+        y=y_col,
+        color="city",
+        markers=True,
+        title=title,
+        labels={
+            "scrape_date": "Scrape date",
+            y_col: ylabel,
+            "city": "City",
+        },
+        hover_data=["listings"],
+    )
+
+    fig.update_layout(
+        height=560,
+        hovermode="x unified",
+        legend_title_text="City",
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
 
 # --------------------------------------------------
-# Tabs
+# Header
 # --------------------------------------------------
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
-    [
-        "i) Price distribution",
-        "ii) Price/m² distribution",
-        "iii) Price/m² x Area",
-        "iv) Price/m² x Bedrooms",
-        "v) Price/m² x Bathrooms",
-        "vi) Price/m² x Parking",
-        "vii) Median price over time",
-        "viii) City comparison",
-    ]
+st.markdown(
+    """
+    <div class="main-title">VivaReal Real Estate Dashboard</div>
+    <div class="subtitle">Multi-city property monitor based on scraped VivaReal listings.</div>
+    """,
+    unsafe_allow_html=True,
 )
 
-with tab1:
-    st.subheader("i) Price Distribution")
+# --------------------------------------------------
+# Sections
+# --------------------------------------------------
+if section == "Overview":
+    st.subheader("Overview")
+
+    metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
+
+    metrics = [
+        ("Listings", f"{len(filtered):,}"),
+        ("Cities", f"{filtered['city'].nunique():,}"),
+        ("Median price", f"R$ {filtered['price_num'].median():,.0f}"),
+        ("Median area", f"{filtered['area_num'].median():,.0f} m²"),
+        ("Median R$/m²", f"R$ {filtered['price_per_m2'].median():,.0f}"),
+    ]
+
+    for col, (label, value) in zip(
+        [metric_col1, metric_col2, metric_col3, metric_col4, metric_col5],
+        metrics,
+    ):
+        with col:
+            st.markdown(
+                f"""
+                <div class="metric-card">
+                    <div class="metric-label">{label}</div>
+                    <div class="metric-value">{value}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+
+    st.subheader("City summary")
+
+    st.dataframe(
+        city_summary,
+        use_container_width=True,
+    )
+
+    st.divider()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Listings by city")
+        listings_by_city = city_summary.sort_values("listings", ascending=False)
+
+        plot_city_bar(
+            listings_by_city,
+            x_col="city",
+            y_col="listings",
+            title="Number of listings by city",
+            xlabel="City",
+            ylabel="Listings",
+        )
+
+    with col2:
+        st.subheader("Median R$/m² by city")
+        price_m2_by_city = city_summary.sort_values("median_price_m2", ascending=False)
+
+        plot_city_bar(
+            price_m2_by_city,
+            x_col="city",
+            y_col="median_price_m2",
+            title="Median price per m² by city",
+            xlabel="City",
+            ylabel="Median R$/m²",
+        )
+
+
+elif section == "Property estimator":
+    st.subheader("Property Price Estimator")
+    st.caption("Estimate a typical listing price using similar scraped VivaReal listings.")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        estimator_city = st.selectbox(
+            "City",
+            options=sorted(df["city"].dropna().unique()),
+        )
+
+    with col2:
+        area_input = st.number_input(
+            "Area m²",
+            min_value=10,
+            max_value=2000,
+            value=80,
+            step=5,
+        )
+
+    with col3:
+        bedrooms_input = st.number_input(
+            "Bedrooms",
+            min_value=0,
+            max_value=10,
+            value=2,
+            step=1,
+        )
+
+    with col4:
+        bathrooms_input = st.number_input(
+            "Bathrooms",
+            min_value=0,
+            max_value=10,
+            value=2,
+            step=1,
+        )
+
+    col5, col6 = st.columns(2)
+
+    with col5:
+        parking_input = st.number_input(
+            "Parking spaces",
+            min_value=0,
+            max_value=10,
+            value=1,
+            step=1,
+        )
+
+    with col6:
+        use_parking = st.checkbox(
+            "Match parking spaces exactly",
+            value=False,
+        )
+
+    area_tolerance = st.slider(
+        "Area tolerance",
+        min_value=5,
+        max_value=50,
+        value=20,
+        step=5,
+        help="Example: 20 means the app searches listings within ±20% of the area.",
+    )
+
+    min_area_match = area_input * (1 - area_tolerance / 100)
+    max_area_match = area_input * (1 + area_tolerance / 100)
+
+    similar = df[
+        (df["city"] == estimator_city) &
+        (df["area_num"] >= min_area_match) &
+        (df["area_num"] <= max_area_match) &
+        (df["bedrooms_clean"] == bedrooms_input) &
+        (df["bathrooms_clean"] == bathrooms_input)
+    ].copy()
+
+    if use_parking:
+        similar = similar[similar["parking_clean"] == parking_input]
+
+    st.divider()
+
+    if similar.empty:
+        st.warning(
+            "No similar listings found. Try increasing the area tolerance, "
+            "changing bedrooms/bathrooms, or removing exact parking matching."
+        )
+    else:
+        estimated_price = similar["price_num"].median()
+        estimated_price_m2 = similar["price_per_m2"].median()
+        listing_count = len(similar)
+
+        metric_col1, metric_col2, metric_col3 = st.columns(3)
+
+        estimator_metrics = [
+            ("Estimated median price", f"R$ {estimated_price:,.0f}"),
+            ("Estimated median R$/m²", f"R$ {estimated_price_m2:,.0f}"),
+            ("Similar listings", f"{listing_count:,}"),
+        ]
+
+        for col, (label, value) in zip(
+            [metric_col1, metric_col2, metric_col3],
+            estimator_metrics,
+        ):
+            with col:
+                st.markdown(
+                    f"""
+                    <div class="metric-card">
+                        <div class="metric-label">{label}</div>
+                        <div class="metric-value">{value}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        st.caption(
+            f"Based on listings in {estimator_city} with area between "
+            f"{min_area_match:.0f} m² and {max_area_match:.0f} m², "
+            f"{bedrooms_input} bedrooms and {bathrooms_input} bathrooms."
+        )
+
+        fig = px.scatter(
+            similar,
+            x="area_num",
+            y="price_num",
+            color="city",
+            title="Similar listings: price vs area",
+            labels={
+                "area_num": "Area m²",
+                "price_num": "Price R$",
+                "city": "City",
+            },
+            hover_data=[
+                col for col in [
+                    "title",
+                    "price",
+                    "area",
+                    "bedrooms",
+                    "bathrooms",
+                    "parking",
+                    "neighborhood_city",
+                    "street",
+                    "price_per_m2",
+                ]
+                if col in similar.columns
+            ],
+        )
+
+        fig.update_layout(
+            height=520,
+            hovermode="closest",
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Similar listings used for estimate")
+
+        display_cols = [
+            "city",
+            "price",
+            "area",
+            "bedrooms",
+            "bathrooms",
+            "parking",
+            "neighborhood_city",
+            "street",
+            "title",
+            "price_num",
+            "area_num",
+            "price_per_m2",
+        ]
+
+        display_cols = [col for col in display_cols if col in similar.columns]
+
+        st.dataframe(
+            similar.sort_values("price_per_m2", ascending=False)[display_cols],
+            use_container_width=True,
+        )
+
+
+elif section == "Price distribution":
+    st.subheader("Price Distribution")
 
     plot_histogram_by_city(
         filtered,
@@ -437,8 +817,9 @@ with tab1:
         bins=40,
     )
 
-with tab2:
-    st.subheader("ii) Price/m² Distribution")
+
+elif section == "Price/m² distribution":
+    st.subheader("Price/m² Distribution")
 
     plot_histogram_by_city(
         filtered,
@@ -448,8 +829,9 @@ with tab2:
         bins=40,
     )
 
-with tab3:
-    st.subheader("iii) Price/m² x Area")
+
+elif section == "Price/m² x Area":
+    st.subheader("Price/m² x Area")
 
     plot_scatter(
         filtered,
@@ -460,8 +842,9 @@ with tab3:
         ylabel="Price per m² R$",
     )
 
-with tab4:
-    st.subheader("iv) Price/m² x Bedrooms")
+
+elif section == "Price/m² x Bedrooms":
+    st.subheader("Price/m² x Bedrooms")
 
     plot_median_bar_by_city(
         filtered,
@@ -481,8 +864,9 @@ with tab4:
         ylabel="Price per m² R$",
     )
 
-with tab5:
-    st.subheader("v) Price/m² x Bathrooms")
+
+elif section == "Price/m² x Bathrooms":
+    st.subheader("Price/m² x Bathrooms")
 
     plot_median_bar_by_city(
         filtered,
@@ -502,8 +886,9 @@ with tab5:
         ylabel="Price per m² R$",
     )
 
-with tab6:
-    st.subheader("vi) Price/m² x Parking")
+
+elif section == "Price/m² x Parking":
+    st.subheader("Price/m² x Parking")
 
     plot_median_bar_by_city(
         filtered,
@@ -523,8 +908,9 @@ with tab6:
         ylabel="Price per m² R$",
     )
 
-with tab7:
-    st.subheader("vii) Median Price Over Time")
+
+elif section == "Median price over time":
+    st.subheader("Median Price Over Time")
 
     time_df = filtered.copy()
     time_df = time_df.dropna(subset=["scrape_date", "price_num", "price_per_m2", "city"])
@@ -544,55 +930,30 @@ with tab7:
             .sort_values(["scrape_date", "city"])
         )
 
-        fig, ax = plt.subplots(figsize=(12, 6))
-
-        for city in sorted(median_price_time["city"].dropna().unique()):
-            city_data = median_price_time[median_price_time["city"] == city]
-
-            ax.plot(
-                city_data["scrape_date"],
-                city_data["median_price"],
-                marker="o",
-                label=city,
-            )
-
-        ax.set_title("Median Property Price Over Time by City")
-        ax.set_xlabel("Scrape date")
-        ax.set_ylabel("Median price R$")
-        ax.ticklabel_format(style="plain", axis="y")
-        ax.legend()
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+        plot_time_series(
+            median_price_time,
+            y_col="median_price",
+            title="Median Property Price Over Time by City",
+            ylabel="Median price R$",
+        )
 
         st.subheader("Median Price/m² Over Time")
 
-        fig, ax = plt.subplots(figsize=(12, 6))
-
-        for city in sorted(median_price_time["city"].dropna().unique()):
-            city_data = median_price_time[median_price_time["city"] == city]
-
-            ax.plot(
-                city_data["scrape_date"],
-                city_data["median_price_m2"],
-                marker="o",
-                label=city,
-            )
-
-        ax.set_title("Median Price per m² Over Time by City")
-        ax.set_xlabel("Scrape date")
-        ax.set_ylabel("Median R$/m²")
-        ax.ticklabel_format(style="plain", axis="y")
-        ax.legend()
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+        plot_time_series(
+            median_price_time,
+            y_col="median_price_m2",
+            title="Median Price per m² Over Time by City",
+            ylabel="Median R$/m²",
+        )
 
         st.dataframe(
             median_price_time,
             use_container_width=True,
         )
 
-with tab8:
-    st.subheader("viii) City Comparison")
+
+elif section == "City comparison":
+    st.subheader("City Comparison")
 
     city_metric = st.selectbox(
         "Metric to compare",
@@ -612,28 +973,24 @@ with tab8:
 
     comparison = city_summary.sort_values(city_metric, ascending=False)
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.bar(comparison["city"], comparison[city_metric])
-    ax.set_title("City Comparison")
-    ax.set_xlabel("City")
-    ax.set_ylabel(city_metric.replace("_", " ").title())
-
-    if city_metric != "listings":
-        format_currency_axis(ax, "y")
-
-    st.pyplot(fig)
+    plot_city_bar(
+        comparison,
+        x_col="city",
+        y_col=city_metric,
+        title="City Comparison",
+        xlabel="City",
+        ylabel=city_metric.replace("_", " ").title(),
+    )
 
     st.dataframe(
         comparison,
         use_container_width=True,
     )
 
-# --------------------------------------------------
-# Optional data view/download
-# --------------------------------------------------
-st.divider()
 
-with st.expander("View cleaned data"):
+elif section == "Data table":
+    st.subheader("Cleaned data")
+
     display_cols = [
         "scrape_date",
         "scrape_datetime",
@@ -650,6 +1007,9 @@ with st.expander("View cleaned data"):
         "title",
         "price_num",
         "area_num",
+        "bedrooms_clean",
+        "bathrooms_clean",
+        "parking_clean",
         "price_per_m2",
     ]
 
@@ -666,11 +1026,11 @@ with st.expander("View cleaned data"):
         use_container_width=True,
     )
 
-csv_data = filtered.to_csv(index=False).encode("utf-8")
+    csv_data = filtered.to_csv(index=False).encode("utf-8")
 
-st.download_button(
-    label="Download filtered cleaned data",
-    data=csv_data,
-    file_name="vivareal_filtered_cleaned.csv",
-    mime="text/csv",
-)
+    st.download_button(
+        label="Download filtered cleaned data",
+        data=csv_data,
+        file_name="vivareal_filtered_cleaned.csv",
+        mime="text/csv",
+    )
