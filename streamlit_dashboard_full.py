@@ -551,7 +551,7 @@ def plot_time_series(data, y_col, title, ylabel):
 st.markdown(
     """
     <div class="main-title">Monitor imobiliáio de capitais Brasileiras</div>
-    <div class="subtitle">Venda</div>
+    <div class="subtitle">Vendas</div>
     """,
     unsafe_allow_html=True,
 )
